@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import FileUpload from '@/components/FileUpload';
 import TextInputArea from '@/components/TextInputArea';
@@ -9,6 +8,8 @@ import Sidebar from '@/components/Sidebar';
 import SettingsDialog from '@/components/SettingsDialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from '@/components/ui/use-toast';
+import { Summarizer } from '@/components/Summarizer';
+import { generateMistralSummary } from '@/services/mistral';
 
 const Index = () => {
   // State for file upload and text extraction
@@ -31,7 +32,7 @@ const Index = () => {
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   
   // State for model selection
-  const [selectedModel, setSelectedModel] = useState<string>('gpt-3.5-turbo');
+  const [selectedModel, setSelectedModel] = useState<string>('extractive');
   
   // State for sidebar
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -77,7 +78,7 @@ const Index = () => {
   };
 
   // Handle generate summary
-  const handleGenerateSummary = () => {
+  const handleGenerateSummary = async () => {
     if (!extractedText) {
       toast({
         title: "No text to summarize",
@@ -90,29 +91,38 @@ const Index = () => {
     setIsSummarizing(true);
     setSummarizationProgress(0);
     
-    // Simulate summarization with progress updates
-    const interval = setInterval(() => {
-      setSummarizationProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 300);
-    
-    // Simulate summary generation
-    setTimeout(() => {
-      const summaryText = `This is a ${summaryType} summary of the text, tailored for ${readabilityLevel} readers in ${language} language. 
-      
-The summary has been generated using the ${selectedModel} model with a target length of ${summaryLength} words and a ${tone} tone.
+    try {
+      let summaryText: string;
 
-In a production environment, this would be a proper AI-generated summary based on your input text and selected parameters.`;
+      if (selectedModel === 'mistral') {
+        // Use Mistral API
+        summaryText = await generateMistralSummary(extractedText, {
+          summaryType,
+          readabilityLevel,
+          language,
+          summaryLength,
+          tone
+        });
+      } else {
+        // Use extractive model
+        const sentences = extractedText.match(/[^.!?]+[.!?]+/g) || [];
+        
+        // Simple scoring based on sentence length and position
+        const scoredSentences = sentences.map((sentence, index) => ({
+          sentence,
+          score: sentence.split(' ').length * (1 - index / sentences.length)
+        }));
+        
+        // Sort by score and take top sentences based on summary type
+        const numSentences = summaryType === 'short' ? 2 : summaryType === 'medium' ? 3 : 4;
+        summaryText = scoredSentences
+          .sort((a, b) => b.score - a.score)
+          .slice(0, numSentences)
+          .map(s => s.sentence)
+          .join(' ');
+      }
       
       setSummary(summaryText);
-      setIsSummarizing(false);
-      clearInterval(interval);
-      setSummarizationProgress(100);
       
       // Add to chat history
       const newChatId = Date.now().toString();
@@ -125,7 +135,17 @@ In a production environment, this would be a proper AI-generated summary based o
         title: "Summary generated",
         description: "Your summary has been generated successfully.",
       });
-    }, 3000);
+    } catch (error) {
+      console.error('Error generating summary:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to generate summary. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSummarizing(false);
+      setSummarizationProgress(100);
+    }
   };
 
   // Handle generate audio

@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Menu, Plus, User, ChevronDown } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
@@ -41,9 +40,8 @@ const Header: React.FC<HeaderProps> = ({
             <SelectValue placeholder="Select Model" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="gpt-4">OpenAI GPT-4</SelectItem>
-            <SelectItem value="gpt-3.5-turbo">OpenAI GPT-3.5</SelectItem>
             <SelectItem value="mistral">Mistral</SelectItem>
+            <SelectItem value="extractive">Extractive Model</SelectItem>
           </SelectContent>
         </Select>
         <ThemeToggle />
