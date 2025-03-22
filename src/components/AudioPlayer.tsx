@@ -1,6 +1,5 @@
-
-import React, { useState, useRef } from 'react';
-import { Play, Pause, Download, Volume2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Play, Pause, Square, Download, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -9,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { toast } from '@/components/ui/use-toast';
 
 interface AudioPlayerProps {
   text: string;
@@ -22,53 +22,108 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
   onGenerate,
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [voice, setVoice] = useState('alloy');
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [voice, setVoice] = useState('');
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [utterance, setUtterance] = useState<SpeechSynthesisUtterance | null>(null);
+
+  // Initialize voices when component mounts
+  useEffect(() => {
+    const loadVoices = () => {
+      const availableVoices = window.speechSynthesis.getVoices();
+      console.log('Available voices:', availableVoices);
+      const englishVoices = availableVoices.filter(v => v.lang.startsWith('en'));
+      console.log('English voices:', englishVoices);
+      setVoices(englishVoices);
+      if (englishVoices.length > 0) {
+        setVoice(englishVoices[0].name);
+        console.log('Selected default voice:', englishVoices[0].name);
+      }
+    };
+
+    // Initial load
+    const initialVoices = window.speechSynthesis.getVoices();
+    if (initialVoices.length > 0) {
+      loadVoices();
+    }
+
+    // Setup event listener for when voices are loaded
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+    };
+  }, []);
 
   const handlePlay = () => {
-    if (audioRef.current) {
-      if (isPlaying) {
-        audioRef.current.pause();
+    console.log('Play button clicked. Current state:', { isPlaying, text, voice });
+    if (isPlaying) {
+      window.speechSynthesis.pause();
+    } else {
+      if (utterance) {
+        console.log('Resuming speech');
+        window.speechSynthesis.resume();
       } else {
-        audioRef.current.play();
+        console.log('Generating new speech');
+        generateSpeech();
       }
-      setIsPlaying(!isPlaying);
     }
+    setIsPlaying(!isPlaying);
   };
 
-  const handleEnded = () => {
+  const handleStop = () => {
+    console.log('Stop button clicked');
+    window.speechSynthesis.cancel();
     setIsPlaying(false);
+    setUtterance(null);
   };
 
-  const handleDownload = () => {
-    if (audioUrl) {
-      const a = document.createElement('a');
-      a.href = audioUrl;
-      a.download = 'summary.mp3';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    }
-  };
-
-  // This would normally call an API to generate speech
   const generateSpeech = () => {
+    console.log('Generating speech with:', { text, voice });
     onGenerate();
     
-    // Simulating API call with setTimeout
-    setTimeout(() => {
-      // In a real app, this would be the URL from the TTS API
-      // Here we're just using a basic Audio API for demonstration
-      const audio = new Audio();
-      const url = URL.createObjectURL(new Blob([])); // Empty blob for demo
-      setAudioUrl(url);
+    try {
+      // Cancel any ongoing speech
+      handleStop();
+
+      // Create new utterance
+      const newUtterance = new SpeechSynthesisUtterance(text);
       
-      // In a real implementation, we would set the audio source to the API response
-      if (audioRef.current) {
-        audioRef.current.src = url;
+      // Find selected voice
+      const selectedVoice = voices.find(v => v.name === voice);
+      console.log('Selected voice:', selectedVoice);
+      if (selectedVoice) {
+        newUtterance.voice = selectedVoice;
       }
-    }, 2000);
+
+      newUtterance.onend = () => {
+        console.log('Speech ended');
+        setIsPlaying(false);
+        setUtterance(null);
+      };
+
+      newUtterance.onerror = (event) => {
+        console.error('Speech synthesis error:', event);
+        toast({
+          title: "Error",
+          description: "Failed to generate speech. Please try again.",
+          variant: "destructive",
+        });
+        setIsPlaying(false);
+        setUtterance(null);
+      };
+
+      setUtterance(newUtterance);
+      window.speechSynthesis.speak(newUtterance);
+      setIsPlaying(true);
+      console.log('Speech started');
+    } catch (error) {
+      console.error('Error generating speech:', error);
+      toast({
+        title: "Error",
+        description: "Failed to generate speech. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -79,45 +134,73 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
       </div>
       
       <div className="flex items-center space-x-2">
-        <Select value={voice} onValueChange={setVoice}>
+        <Select value={voice} onValueChange={(newVoice) => {
+          console.log('Voice changed to:', newVoice);
+          setVoice(newVoice);
+        }}>
           <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="Select voice" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="alloy">Alloy</SelectItem>
-            <SelectItem value="echo">Echo</SelectItem>
-            <SelectItem value="fable">Fable</SelectItem>
+            {voices.map((v) => (
+              <SelectItem key={v.name} value={v.name}>
+                {`${v.name} (${v.lang})`}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         
-        <Button 
-          variant="outline" 
-          size="icon"
-          disabled={!audioUrl || isGenerating}
-          onClick={handlePlay}
-        >
-          {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-        </Button>
-        
-        <Button 
-          variant="outline" 
-          size="icon"
-          disabled={!audioUrl || isGenerating}
-          onClick={handleDownload}
-        >
-          <Download className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center space-x-1">
+          <Button 
+            variant="outline" 
+            size="icon"
+            disabled={!text || isGenerating}
+            onClick={handlePlay}
+            title={isPlaying ? "Pause" : "Play"}
+          >
+            {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+          </Button>
+
+          <Button 
+            variant="outline" 
+            size="icon"
+            disabled={!text || isGenerating || !isPlaying}
+            onClick={handleStop}
+            title="Stop"
+          >
+            <Square className="h-4 w-4" />
+          </Button>
+          
+          <Button 
+            variant="outline" 
+            size="icon"
+            disabled={!text || isGenerating}
+            onClick={() => {
+              toast({
+                title: "Coming Soon",
+                description: "Download functionality will be available in a future update.",
+              });
+            }}
+            title="Download Audio"
+          >
+            <Download className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
       
       <Button 
         onClick={generateSpeech} 
-        disabled={!text || isGenerating}
+        disabled={!text || isGenerating || voices.length === 0}
         className="w-full"
       >
         {isGenerating ? 'Generating Audio...' : 'Generate Audio'}
       </Button>
-      
-      <audio ref={audioRef} onEnded={handleEnded} style={{ display: 'none' }} />
+
+      {voices.length === 0 && (
+        <p className="text-sm text-red-500">
+          No voices available. Please make sure your browser supports speech synthesis.
+        </p>
+      )}
     </div>
   );
 };
