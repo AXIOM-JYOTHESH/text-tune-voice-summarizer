@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from '@/components/ui/use-toast';
 import { Summarizer } from '@/components/Summarizer';
 import { generateMistralSummary } from '@/services/mistral';
+import { extractTextFromFile } from '@/services/mistral-ocr';
 
 const Index = () => {
   // State for file upload and text extraction
@@ -44,20 +45,28 @@ const Index = () => {
   const [tone, setTone] = useState<string>('neutral');
 
   // Handle file upload
-  const handleFilesAccepted = (acceptedFiles: File[]) => {
+  const handleFilesAccepted = async (acceptedFiles: File[]) => {
     setFiles(acceptedFiles);
     setIsExtracting(true);
     
-    // Simulate text extraction
-    setTimeout(() => {
-      const text = "This is extracted text from the uploaded file. In a production app, this would be the actual content extracted from your document.";
-      setExtractedText(text);
-      setIsExtracting(false);
+    try {
+      const file = acceptedFiles[0];
+      const extractedText = await extractTextFromFile(file);
+      setExtractedText(extractedText);
       toast({
         title: "File processed successfully",
-        description: `Extracted text from ${acceptedFiles[0].name}`,
+        description: `Extracted text from ${file.name}`,
       });
-    }, 1500);
+    } catch (error) {
+      console.error('Error processing file:', error);
+      toast({
+        title: "Error processing file",
+        description: error instanceof Error ? error.message : "Failed to extract text from the file",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExtracting(false);
+    }
   };
 
   // Handle text input submit
